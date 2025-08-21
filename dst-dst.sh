@@ -164,8 +164,12 @@ login anonymous
 app_update 343050 validate
 quit
 EOF
-    mkdir -p "${DST_DIR}"
-    printf_info "游戏安装完成!存档路径为:${DST_DIR}"
+    if [ -f "${DST_INSTALL_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]; then
+      mkdir -p "${DST_DIR}"
+      printf_info "游戏安装完成!存档路径为:${DST_DIR}"
+    else
+      fatal "饥荒联机版安装失败，请稍后尝试重新安装"
+    fi
   else
     fatal "未找到steamcmd文件，请检查steamcmd安装是否正确"
   fi
@@ -285,8 +289,8 @@ list_clusters() {
   for cluster in "${cluster_arr[@]}"; do
     if [ -f "${cluster}/cluster.ini" ]; then
       num=$((num + 1))
-      cluster_name=$(awk -F "=" '/cluster_name/{print $2}' "${cluster}/cluster.ini")
-      cluster_password=$(awk -F "=" '/cluster_password/{print $2}' "${cluster}/cluster.ini")
+      cluster_name=$(awk -F "=" '/cluster_name/{print $2}' "${cluster}/cluster.ini" | tr -d '\r\n')
+      cluster_password=$(awk -F "=" '/cluster_password/{print $2}' "${cluster}/cluster.ini" | tr -d '\r\n')
       printf '%b\n' "${RED}-------------------${RESET}"
       printf "\t${YELLOW}世界%d${RESET}\n" $num
       printf "${GREEN}房间名: ${BLUE}%s${RESET}\n" "$cluster_name"
@@ -350,9 +354,9 @@ remove_cluster() {
   read -r rm_choice
   if [[ "$rm_choice" =~ ^[yY]$ ]]; then
     rm -rf "${cluster_arr[${arr_index}]}"
-    printf '%s\n' "已移除世界${cluster_arr[${arr_index}]}"
+    printf_info '%s\n' "已移除世界${cluster_arr[${arr_index}]}"
   else
-    printf '%s\n' "取消删除"
+    printf_info '%s\n' "取消删除"
   fi
 }
 
@@ -373,77 +377,6 @@ load_mods() {
       fi
     done
   fi
-}
-
-#--------------------
-# 启动游戏
-#--------------------
-start_game() {
-  list_clusters
-
-  if [ $? -eq 1 ]; then
-    return
-  fi
-
-  printf_info "正在启动游戏服务器"
-  while true; do
-    read -rp "请选择要启动的世界编号:" choice
-    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
-      printf_error "无效的输入，启动失败，即将退出启动"
-      sleep 1
-      return
-    fi
-    if [ "$choice" -le ${#cluster_arr[@]} ] && [ "$choice" -gt 0 ]; then
-      break
-    else
-      printf_warning "无当前编号的世界，请重新输入"
-    fi
-  done
-
-  fix_permissions
-
-  local arr_index=$((choice - 1))
-  # 启动的世界
-  local current_cluster="${cluster_arr[${arr_index}]}"
-  # 科雷目录路径
-  local cluster_dir=${current_cluster##*/}
-  # 是否启动洞穴
-  local shard_enabled=$(awk -F "=" '/shard_enabled/{print $2}' "${DST_DIR}/${cluster_dir}/cluster.ini" | tr -d ' \t\n\r')
-
-  # 添加当前存档modID
-  load_mods "$arr_index"
-
-  check_for_file "${DST_DIR}/${cluster_dir}/cluster.ini"
-  check_for_file "${DST_DIR}/${cluster_dir}/cluster_token.txt"
-  check_for_file "${DST_DIR}/${cluster_dir}/Master/server.ini"
-  if [ -d "${DST_DIR}/${cluster_dir}/Caves" ]; then
-    check_for_file "${DST_DIR}/${cluster_dir}/Caves/server.ini"
-  fi
-  check_for_file "$DST_INSTALL_DIR/bin64"
-
-  sudo -u "$USER_NAME" "${STEAMCMD_INSTALL_DIR}/steamcmd.sh" +force_install_dir "$DST_INSTALL_DIR" +login anonymous +app_update 343050 validate +quit
-
-  #启动游戏需要进入bin目录调用命令,不能使用绝对路径,否则游戏启动程序报错无法找到main.lua文件
-  cd "${DST_INSTALL_DIR}/bin64" >/dev/null 2>&1 || fatal "无法切换到${DST_INSTALL_DIR}/bin64目录"
-
-  run_shared=(./dontstarve_dedicated_server_nullrenderer_x64)
-  run_shared+=(-console)
-  run_shared+=(-persistent_storage_root "${klei_dir}")
-  run_shared+=(-conf_dir "${conf_dir}")
-  run_shared+=(-cluster "$cluster_dir")
-
-  setsid sudo -u "$USER_NAME" "${run_shared[@]}" -shard Master >"${klei_dir}/master.log" 2>&1 &
-  local dst_master_pid=$!
-
-  local dst_caves_pid=""
-  if [ "${shard_enabled}" = "true" ]; then
-    setsid sudo -u "$USER_NAME" "${run_shared[@]}" -shard Caves >"${klei_dir}/caves.log" 2>&1 &
-    dst_caves_pid=$!
-  fi
-
-  printf '%s\n' "${cluster_dir} ${dst_master_pid} ${dst_caves_pid}" >>"${klei_dir}/dst_pid.txt"
-  tail -f "${klei_dir}/master.log"
-
 }
 
 #--------------------
@@ -492,7 +425,7 @@ check_game_status() {
       fi
 
       if [ -f "$DST_DIR/$cluster_id/cluster.ini" ]; then
-        local cluster_name=$(awk -F "=" '/cluster_name/{print $2}' "${DST_DIR}/${cluster_id}/cluster.ini")
+        local cluster_name=$(awk -F "=" '/cluster_name/{print $2}' "${DST_DIR}/${cluster_id}/cluster.ini" | tr -d '\r\n')
         printf '%b\n' "${RED}-------------------${RESET}"
         printf "\t${YELLOW}世界%d${RESET}\n" "$index"
         printf "${GREEN}世界名: ${BLUE}%s${RESET}\n" "${cluster_name}"
@@ -518,6 +451,84 @@ check_game_status() {
 
   fi
 
+}
+
+#--------------------
+# 启动游戏
+#--------------------
+start_game() {
+  list_clusters
+
+  if [ $? -eq 1 ]; then
+    return
+  fi
+
+  while true; do
+    read -rp "请选择要启动的世界编号:" choice
+    if [[ ! "$choice" =~ ^[0-9]+$ ]]; then
+      printf_error "无效的输入，启动失败，即将退出启动"
+      sleep 1
+      return
+    fi
+    if [ "$choice" -le ${#cluster_arr[@]} ] && [ "$choice" -gt 0 ]; then
+      break
+    else
+      printf_warning "无当前编号的世界，请重新输入"
+    fi
+  done
+
+  fix_permissions
+
+  local arr_index=$((choice - 1))
+  # 所启动世界的路径
+  local current_cluster="${cluster_arr[${arr_index}]}"
+  # 所启动世界的目录
+  local cluster_dir=${current_cluster##*/}
+
+  # 检查当前世界是否已经启动
+  if grep "${cluster_dir}" "${klei_dir}/dst_pid.txt" > /dev/null 2>&1;then
+    printf_error "$(awk -F '=' '/cluster_name/{print $2}' "${current_cluster}/cluster.ini" | tr -d ' \r\n')已经启动"
+    printf_error "请根据以下结果检查否启动失败,如果失败,请尝试重新执行启动功能"
+    check_game_status
+    return
+  fi
+
+  # 是否启动洞穴
+  local shard_enabled=$(awk -F "=" '/shard_enabled/{print $2}' "${DST_DIR}/${cluster_dir}/cluster.ini" | tr -d ' \t\n\r')
+
+  # 添加当前存档modID
+  load_mods "$arr_index"
+
+  check_for_file "${DST_DIR}/${cluster_dir}/cluster.ini"
+  check_for_file "${DST_DIR}/${cluster_dir}/cluster_token.txt"
+  check_for_file "${DST_DIR}/${cluster_dir}/Master/server.ini"
+  if [ -d "${DST_DIR}/${cluster_dir}/Caves" ]; then
+    check_for_file "${DST_DIR}/${cluster_dir}/Caves/server.ini"
+  fi
+  check_for_file "$DST_INSTALL_DIR/bin64"
+
+  sudo -u "$USER_NAME" "${STEAMCMD_INSTALL_DIR}/steamcmd.sh" +force_install_dir "$DST_INSTALL_DIR" +login anonymous +app_update 343050 +quit
+
+  #启动游戏需要进入bin目录调用命令,不能使用绝对路径,否则游戏启动程序报错无法找到main.lua文件
+  cd "${DST_INSTALL_DIR}/bin64" >/dev/null 2>&1 || fatal "无法切换到${DST_INSTALL_DIR}/bin64目录"
+
+  run_shared=(./dontstarve_dedicated_server_nullrenderer_x64)
+  run_shared+=(-console)
+  run_shared+=(-persistent_storage_root "${klei_dir}")
+  run_shared+=(-conf_dir "${conf_dir}")
+  run_shared+=(-cluster "$cluster_dir")
+
+  setsid sudo -u "$USER_NAME" "${run_shared[@]}" -shard Master >"${klei_dir}/master.log" 2>&1 &
+  local dst_master_pid=$!
+
+  local dst_caves_pid=""
+  if [ "${shard_enabled}" = "true" ]; then
+    setsid sudo -u "$USER_NAME" "${run_shared[@]}" -shard Caves >"${klei_dir}/caves.log" 2>&1 &
+    dst_caves_pid=$!
+  fi
+
+  printf '%s\n' "${cluster_dir} ${dst_master_pid} ${dst_caves_pid}" >>"${klei_dir}/dst_pid.txt"
+  tail -f "${klei_dir}/master.log"
 }
 
 #--------------------
@@ -610,7 +621,10 @@ main() {
       backup_cluster
       pause "按任意键返回菜单...."
       ;;
-    8) remove_cluster ;;
+    8) 
+      remove_cluster
+      pause "按任意键返回菜单...."
+      ;;
     9)
       printf "%b\n" "${CYAN}查理会想你的${RESET}"
       exit 0
