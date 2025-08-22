@@ -68,7 +68,7 @@ hello_DST() {
   printf '%s\n' "   饥荒联机版服务器搭建脚本"
   printf '%s\n' "      你是谁?你不是猪人"
   printf '%s\n' "        作者:SHIWIVI"
-  printf '%s\n' "     开源许可证(License):MIT"
+  printf '%s\n' "  开源许可协议(License):MIT"
   printf '%s\n' "Github仓库地址：https://github.com/shiwivi/dst-dst"
   printf '%b\n' "===============================${RESET}"
 }
@@ -326,6 +326,7 @@ backup_cluster() {
     fi
   done
 }
+
 # 移除世界
 remove_cluster() {
   list_clusters
@@ -361,7 +362,7 @@ remove_cluster() {
 }
 
 #--------------------
-# 提取模组ID
+# 从存档提取模组ID并添加到dedicated_server_mods_setup.lua文件
 #--------------------
 load_mods() {
   printf_info "正在查找服务器模组"
