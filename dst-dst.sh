@@ -224,7 +224,7 @@ set_swap() {
           continue
         fi
         if [ "$user_size" -gt "${avail_disk_size}" ]; then
-          printf_warning "输入值太了，超过了剩余磁盘大小，你完蛋了!"
+          printf_warning "输入值太大了，超过了剩余磁盘大小，你完蛋了!"
           continue
         fi
         swap_size=$user_size
